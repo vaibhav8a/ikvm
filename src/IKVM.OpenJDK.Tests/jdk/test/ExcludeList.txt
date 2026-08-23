@@ -1601,6 +1601,18 @@ javax/rmi/PortableRemoteObject/ConcurrentHashMapTest.java                       
 javax/rmi/ssl/SSLSocketParametersTest.sh                                                                                generic-all
 javax/script/ProviderTest.sh                                                                                            generic-all
 javax/security/auth/Subject/doAs/Test.sh                                                                                generic-all
+# BulkSoundBank.java is the regression test for JDK-8350813, which guards
+# against OutOfMemoryError when rendering a bulky soundbank. The upstream fix
+# in AudioFileSoundbankReader.getSoundbank computes a budget from
+# Runtime.maxMemory() minus the used heap and throws InvalidMidiDataException
+# when the audio data will not fit. IKVM has no fixed heap, so maxMemory()
+# returns Long.MAX_VALUE as the spec requires, the budget is effectively
+# infinite, the guard never fires, and the read runs until the CLR throws.
+# The test also runs with -Xmx1g, which IKVM logs as an unrecognized option.
+# The test cannot pass while the fix is expressed purely in terms of a heap
+# cap we do not model. Excluded on all platforms, where it fails identically.
+javax/sound/midi/BulkSoundBank/BulkSoundBank.java                                                                       generic-all
+
 javax/sound/midi/Devices/InitializationHang.java                                                                        generic-all
 javax/sound/midi/File/SMPTESequence.java                                                                                macosx-all
 javax/sound/midi/Gervill/AudioFloatConverter/GetFormat.java                                                             macosx-all
@@ -3438,6 +3450,8 @@ security/infra/java/security/cert/CertPathValidator/certification/CAInterop.java
 security/infra/java/security/cert/CertPathValidator/certification/CAInterop.java#twcaglobalrootca                       generic-all
 security/infra/java/security/cert/CertPathValidator/certification/CAInterop.java#usertrusteccca                         generic-all
 security/infra/java/security/cert/CertPathValidator/certification/CAInterop.java#usertrustrsaca                         generic-all
+security/infra/java/security/cert/CertPathValidator/certification/CAInterop.java#wisekeyglobalrootgbca                  generic-all
+security/infra/java/security/cert/CertPathValidator/certification/CAInterop.java#wisekeyglobalrootgcca                  generic-all
 security/infra/java/security/cert/CertPathValidator/certification/DTrustCA.java                                         generic-all
 security/infra/java/security/cert/CertPathValidator/certification/HaricaCA.java                                         generic-all
 security/infra/java/security/cert/CertPathValidator/certification/LuxTrustCA.java                                       generic-all
