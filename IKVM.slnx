@@ -87,7 +87,7 @@
   <Project Path="src/IKVM.Java.runtime.osx/IKVM.Java.runtime.osx.ikvmproj" Type="daea77de-8320-43ba-ba7c-ef5c12478ab5" />
   <Project Path="src/IKVM.Java.runtime.win/IKVM.Java.runtime.win.ikvmproj" Type="daea77de-8320-43ba-ba7c-ef5c12478ab5" />
   <Project Path="src/IKVM.Java.Tests.Util/IKVM.Java.Tests.Util.csproj" />
-  <Project Path="src/IKVM.Java.Tests/IKVM.Java.Tests.csproj" />
+  <Project Path="src/IKVM.Java.Tests/IKVM.Java.Tests.ikvmproj" />
   <Project Path="src/IKVM.Java/IKVM.Java.ikvmproj" Type="daea77de-8320-43ba-ba7c-ef5c12478ab5" />
   <Project Path="src/IKVM.JTReg.TestAdapter.Core/IKVM.JTReg.TestAdapter.Core.csproj" />
   <Project Path="src/IKVM.JTReg.TestAdapter.Tests/IKVM.JTReg.TestAdapter.Tests.csproj" />

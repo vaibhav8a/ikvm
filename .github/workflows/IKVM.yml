@@ -27,11 +27,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Checkout Source
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
       with:
         submodules: recursive
     - name: Cache OpenJDK Test Harness Build
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ext/jtreg/build
         key: jtreg-build--${{ runner.os }}--${{ hashFiles('ext/jtreg/**') }}-8
@@ -63,6 +63,9 @@ jobs:
     - build-jtreg
     timeout-minutes: 720
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     env:
       DOTNET_INSTALL_DIR: ${{ github.workspace }}/.dotnet
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
@@ -85,7 +88,7 @@ jobs:
         sudo apt-get clean && \
         sudo rm -rf /usr/share/swift
     - name: Free Disk Space
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         android: false
         swap-storage: false
@@ -94,7 +97,7 @@ jobs:
       with:
         swap-size-gb: 8
     - name: Checkout Source
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
         submodules: recursive
@@ -103,15 +106,15 @@ jobs:
         sudo apt-get update && \
         sudo apt-get install -y powershell
     - name: Setup .NET 6.0
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 6.0.x
     - name: Setup .NET 8.0
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 8.0.x
     - name: Setup .NET 10.0
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     - name: Install Mono
@@ -126,17 +129,17 @@ jobs:
     - name: Install LLVM and Clang
       run: |
         sudo apt-get update && \
-        sudo apt-get install -y clang-20 llvm-20 && \
+        sudo apt-get install -y clang-20 llvm-20 lld-20 && \
         echo "PATH=/usr/lib/llvm-20/bin:$PATH" >> $GITHUB_ENV
     - name: Cache NuGet Packages
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ${{ github.workspace }}/.nuget/packages
         key: nuget--${{ runner.os }}--${{ hashFiles('**/*.csproj', '**/*.ikvmproj', '**/*.msbuildproj', '**/global.json', '**/nuget.config') }}
         restore-keys: |
           nuget--${{ runner.os }}--
     - name: Cache cargo
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: |
           ~/.cargo/registry
@@ -150,11 +153,11 @@ jobs:
         version: latest
         locked: false
     - name: Install GitVersion
-      uses: gittools/actions/gitversion/setup@v3
+      uses: gittools/actions/gitversion/setup@v4
       with:
-        versionSpec: 5.x
+        versionSpec: 6.x
     - name: Execute GitVersion
-      uses: gittools/actions/gitversion/execute@v3
+      uses: gittools/actions/gitversion/execute@v4
     - name: Download JTReg Build
       uses: actions/download-artifact@v8
       with:
@@ -170,6 +173,11 @@ jobs:
         fileName: "*.tar.gz"
         out-file-path: ext/ikvm-native-sdk
         extract: true
+    - name: Configure Maven for GitHub Packages
+      uses: whelk-io/maven-settings-xml-action@v22
+      with:
+        servers: '[{ "id": "ikvmnet", "username": "${{ github.actor }}", "password": "${{ secrets.GITHUB_TOKEN }}" }]'
+        repositories: '[{ "id": "ikvmnet", "url": "https://maven.pkg.github.com/ikvmnet/*" }]'
     - name: Add NuGet Source (GitHub)
       shell: pwsh
       run: dotnet nuget add source --username USERNAME --password $env:GITHUB_TOKEN --store-password-in-clear-text --name ikvm $env:GITHUB_REPOS
@@ -526,11 +534,32 @@ jobs:
       matrix: ${{ fromJSON(needs.test-vars.outputs.matrix) }}
     name: Test (${{ matrix.run }}:${{ matrix.tfm }}:${{ matrix.sys }})
     timeout-minutes: 240
-    runs-on: ${{ fromJSON('{"win-x86":["windows-2022"],"win-x64":["windows-2022"],"linux-x64":["ubuntu-24.04"],"linux-arm64":["ubuntu-24.04-arm"],"osx-x64":["macos-13"],"osx-arm64":["macos-14"]}')[matrix.sys] }}
+    runs-on: ${{ fromJSON('{"win-x86":["windows-2025-vs2026"],"win-x64":["windows-2025-vs2026"],"linux-x64":["ubuntu-24.04"],"linux-arm64":["ubuntu-24.04-arm"],"osx-x64":["macos-13"],"osx-arm64":["macos-14"]}')[matrix.sys] }}
     steps:
+    - name: Install Visual C++ Runtime
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        # The PKCS11 provider loads native libraries built against the older MSVC
+        # runtimes. Without them its tests fail across every Windows partition, so
+        # this step is required rather than incidental.
+        #
+        # community.chocolatey.org has taken out whole runs when unavailable, and
+        # Microsoft's direct download links for the pre-2012 redistributables have
+        # moved, so retry here rather than depend on either being reliable first
+        # time.
+        $ErrorActionPreference = 'Continue'
+        $installed = $false
+        for ($try = 1; $try -le 5; $try++) {
+            choco install vcredist-all -y --no-progress --ignore-checksums
+            if ($LASTEXITCODE -in 0, 1641, 3010) { $installed = $true; break }
+            Write-Host "attempt $try failed with $LASTEXITCODE, retrying"
+            Start-Sleep -Seconds (15 * $try)
+        }
+        if (-not $installed) { throw 'could not install the Visual C++ runtimes' }
     - name: Free Disk Space (Linux)
       if: runner.os == 'Linux'
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         dotnet: false
         swap-storage: false
@@ -539,7 +568,7 @@ jobs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        $dir="C:\w"
+        $dir="${{ runner.temp }}\w"
         mkdir $dir
         mkdir $dir\temp
         mkdir $dir\dotnet
@@ -563,10 +592,6 @@ jobs:
     #   if: runner.os == 'Windows'
     #   shell: pwsh
     #   run: choco install procdump -y; Add-Content $env:GITHUB_PATH "$env:ProgramData\chocolatey\bin\"
-    - name: Install Visual C++ Runtime
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: choco install vcredist-all -y
     - name: Install Mono
       if: runner.os == 'Linux'
       run: |
@@ -577,73 +602,73 @@ jobs:
       run: /usr/bin/Xvfb :99 & disown; echo DISPLAY=:99 >> $GITHUB_ENV
     - name: Setup .NET 6.0
       if: matrix.sys != 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 6.0.x
     - name: Setup .NET 7.0
       if: matrix.sys != 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 7.0.x
     - name: Setup .NET 8.0
       if: matrix.sys != 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 8.0.x
     - name: Setup .NET 9.0
       if: matrix.sys != 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 9.0.x
     - name: Setup .NET 10.0
       if: matrix.sys != 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     - name: Setup .NET 6.0
       if: matrix.sys == 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 6.0.x
       env:
         PROCESSOR_ARCHITECTURE: x86
     - name: Setup .NET 7.0
       if: matrix.sys == 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 7.0.x
       env:
         PROCESSOR_ARCHITECTURE: x86
     - name: Setup .NET 8.0
       if: matrix.sys == 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 8.0.x
       env:
         PROCESSOR_ARCHITECTURE: x86
     - name: Setup .NET 9.0
       if: matrix.sys == 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 9.0.x
       env:
         PROCESSOR_ARCHITECTURE: x86
     - name: Setup .NET 10.0
       if: matrix.sys == 'win-x86'
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
       env:
         PROCESSOR_ARCHITECTURE: x86
     - name: Setup WSL
       if: runner.os == 'Windows'
-      uses: Vampire/setup-wsl@v3
+      uses: Vampire/setup-wsl@v7
     - name: Setup Linux
       if: runner.os == 'Linux'
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y libasound2t64 xvfb
     - name: Get Test Name
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       id: test-name
       env:
         MATRIX_RUN: '${{ matrix.run }}'
@@ -738,24 +763,24 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Free Disk Space (Linux)
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         swap-storage: false
         large-packages: false
     - name: Checkout Source
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - name: Setup .NET 10.0
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     - name: Install GitVersion
-      uses: gittools/actions/gitversion/setup@v3
+      uses: gittools/actions/gitversion/setup@v4
       with:
-        versionSpec: 5.x
+        versionSpec: 6.x
     - name: Execute GitVersion
-      uses: gittools/actions/gitversion/execute@v3
+      uses: gittools/actions/gitversion/execute@v4
     - name: Download NuGet Packages
       uses: actions/download-artifact@v8
       with:
@@ -804,7 +829,7 @@ jobs:
         path: dist
     - name: Create Release
       if: github.ref_type == 'tag'
-      uses: ncipollo/release-action@v1.14.0
+      uses: ncipollo/release-action@v1.21.0
       with:
         tag: ${{ github.ref_name }}
         allowUpdates: true
